@@ -7,7 +7,6 @@ pub struct Camera {
     pub center: Vec3,
     pub up: Vec3
 }
-
 impl Camera {
     pub fn new(eye: Vec3, center: Vec3, up: Vec3) -> Self {
         Camera {
@@ -45,5 +44,10 @@ impl Camera {
         );
 
         self.eye = new_eye;
+    }
+
+    // Este es el nuevo método que añadimos
+    pub fn direction(&self) -> Vec3 {
+        (self.center - self.eye).normalize()
     }
 }

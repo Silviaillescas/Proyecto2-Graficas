@@ -228,9 +228,9 @@ fn main() {
     ];
 
     let mut camera = Camera::new(
-        Vec3::new(0.0, 0.0, 10.0),
-        Vec3::new(0.0, 0.0, 0.0),
-        Vec3::new(0.0, 1.0, 0.0),
+        Vec3::new(0.0, 0.0, 10.0),  // Posición inicial de la cámara
+        Vec3::new(0.0, 0.0, 0.0),   // Centro de la cámara (a dónde está mirando)
+        Vec3::new(0.0, 1.0, 0.0),   // Vector "up" para mantener la cámara orientada
     );
 
     // Variables para el ciclo de día y noche
@@ -270,6 +270,15 @@ fn main() {
             AMBIENT_LIGHT_NIGHT
         };
 
+        // Control de la cámara: acercar/alejar
+        if window.is_key_down(Key::W) {
+            camera.eye += camera.direction() * 0.1;  // Acercar
+        }
+        if window.is_key_down(Key::S) {
+            camera.eye -= camera.direction() * 0.1;  // Alejar
+        }
+
+        // Control de la cámara: rotación alrededor del centro
         if window.is_key_down(Key::Left) {
             camera.orbit(rotation_speed, 0.0);
         }
