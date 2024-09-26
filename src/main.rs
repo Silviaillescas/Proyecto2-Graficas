@@ -111,10 +111,6 @@ pub fn cast_ray(
         return skybox(ray_direction);  // Si no hay intersección, devuelve el skybox
     }
 
-    // Usar las coordenadas UV para aplicar una textura animada
-    let (u, v) = uv_mapping(&intersect);
-    let texture_color = wave_texture(u, v, time);  // Llamamos a la función de textura de ondas
-
     let light_dir = (light.position - intersect.point).normalize();
     let view_dir = (ray_origin - intersect.point).normalize();
     let reflect_dir = reflect(&-light_dir, &intersect.normal).normalize();
@@ -145,7 +141,7 @@ pub fn cast_ray(
     }
     
     // Combinamos el color de la textura animada con la iluminación calculada
-    let final_color = (texture_color + diffuse + specular) * (1.0 - reflectivity - transparency)
+    let final_color = (diffuse + specular) * (1.0 - reflectivity - transparency)
     + (reflect_color * reflectivity)
     + (refract_color * transparency)
     + Color::new(255, 255, 255) * ambient_light;
@@ -153,7 +149,6 @@ pub fn cast_ray(
     final_color
 }
 
-// Nueva función que genera el skybox
 fn skybox(ray_direction: &Vec3) -> Color {
     let t = 0.5 * (ray_direction.y + 1.0); // Mapea el y de la dirección del rayo en el intervalo [0, 1]
     let top_color = Color::new(135, 206, 250); // Azul claro (día)
@@ -161,22 +156,6 @@ fn skybox(ray_direction: &Vec3) -> Color {
     
     // Interpolación entre el color superior y el inferior
     top_color * t + bottom_color * (1.0 - t)
-}
-
-// Mapear UVs en la esfera o cubo
-fn uv_mapping(intersect: &Intersect) -> (f32, f32) {
-    // Convertir las coordenadas 3D de la intersección en coordenadas UV (2D)
-    let u = 0.5 + (intersect.normal.x.atan2(intersect.normal.z)) / (2.0 * PI);
-    let v = 0.5 - (intersect.normal.y.asin()) / PI;
-    (u, v)
-}
-
-// Nueva función para simular una textura de ondas
-fn wave_texture(u: f32, v: f32, time: f32) -> Color {
-    let wave = ((u * 10.0 + time).sin() + (v * 10.0 + time).cos()) * 0.5 + 0.5;
-    let intensity = (wave * 255.0).round() as u8;
-    
-    Color::new(intensity, intensity, 255)  // Degradado de azul con ondas
 }
 
 pub fn render(framebuffer: &mut Framebuffer, objects: &[Box<dyn RayIntersect>], camera: &Camera, light: &Light, ambient_light: f32, time: f32) {
@@ -214,44 +193,51 @@ fn main() {
     let mut framebuffer = Framebuffer::new(framebuffer_width, framebuffer_height);
 
     let mut window = Window::new(
-        "Raytracer with Animated Textures",
+        "Raytracer with Enhanced Character",
         window_width,
         window_height,
         WindowOptions::default(),
     ).unwrap();
 
-    let rubber = Material::new(
-        Color::new(80, 0, 0),
-        1.0,
-        [0.9, 0.1, 0.0, 0.0],
+    // Materiales mejorados
+    let body_material = Material::new(
+        Color::new(150, 75, 0),  // Marrón mate
+        5.0,
+        [0.7, 0.1, 0.0, 0.0],
         0.0,
     );
 
-    let ivory = Material::new(
-        Color::new(100, 100, 80),
-        50.0,
-        [0.6, 0.3, 0.6, 0.0],
+    let metallic_limb_material = Material::new(
+        Color::new(200, 200, 200),  // Metálico brillante
+        200.0,
+        [0.8, 0.8, 0.9, 0.0],
         0.0,
     );
 
-    let glass = Material::new(
-        Color::new(255, 255, 255),
+    let glass_head_material = Material::new(
+        Color::new(100, 100, 255),  // Cabeza transparente
         1425.0,
-        [0.0, 10.0, 0.5, 0.5],
+        [0.0, 0.3, 0.5, 0.9],
         0.3,
     );
 
+    // Crear el personaje con más detalles y subdivisiones
     let objects: Vec<Box<dyn RayIntersect>> = vec![
-        Box::new(Sphere { center: Vec3::new(0.0, 0.0, 0.0), radius: 1.0, material: rubber }),
-        Box::new(Sphere { center: Vec3::new(-1.0, -1.0, 1.5), radius: 0.5, material: ivory.clone() }),
-        Box::new(Sphere { center: Vec3::new(-0.3, 0.3, 1.5), radius: 0.3, material: glass.clone() }),
-        Box::new(Cube { min: Vec3::new(-2.0, -2.0, -1.0), max: Vec3::new(-1.0, -1.0, 0.0), material: ivory.clone() }),
-        Box::new(Cube { min: Vec3::new(1.0, 1.0, 0.0), max: Vec3::new(2.0, 2.0, 1.0), material: glass.clone() }),
+        // Cuerpo
+        Box::new(Cube { min: Vec3::new(-0.5, -1.5, 0.0), max: Vec3::new(0.5, -0.5, 1.0), material: body_material.clone() }),
+        // Cabeza
+        Box::new(Sphere { center: Vec3::new(0.0, -0.25, 0.5), radius: 0.25, material: glass_head_material }),
+        // Brazos
+        Box::new(Cube { min: Vec3::new(-0.8, -1.25, 0.0), max: Vec3::new(-0.6, -0.5, 0.8), material: metallic_limb_material.clone() }),
+        Box::new(Cube { min: Vec3::new(0.6, -1.25, 0.0), max: Vec3::new(0.8, -0.5, 0.8), material: metallic_limb_material.clone() }),
+        // Piernas
+        Box::new(Cube { min: Vec3::new(-0.3, -2.0, 0.0), max: Vec3::new(-0.1, -1.5, 0.7), material: metallic_limb_material.clone() }),
+        Box::new(Cube { min: Vec3::new(0.1, -2.0, 0.0), max: Vec3::new(0.3, -1.5, 0.7), material: metallic_limb_material.clone() }),
     ];
 
     let mut camera = Camera::new(
         Vec3::new(0.0, 0.0, 10.0),  // Posición inicial de la cámara
-        Vec3::new(0.0, 0.0, 0.0),   // Centro de la cámara (a dónde está mirando)
+        Vec3::new(0.0, -1.0, 0.0),  // Mirar hacia el personaje
         Vec3::new(0.0, 1.0, 0.0),   // Vector "up" para mantener la cámara orientada
     );
 
@@ -292,15 +278,7 @@ fn main() {
             AMBIENT_LIGHT_NIGHT
         };
 
-        // Control de la cámara: acercar/alejar
-        if window.is_key_down(Key::W) {
-            camera.eye += camera.direction() * 0.1;  // Acercar
-        }
-        if window.is_key_down(Key::S) {
-            camera.eye -= camera.direction() * 0.1;  // Alejar
-        }
-
-        // Control de la cámara: rotación alrededor del centro
+        // Control de la cámara: rotación alrededor del personaje
         if window.is_key_down(Key::Left) {
             camera.orbit(rotation_speed, 0.0);
         }
