@@ -1,4 +1,5 @@
 # Proyecto2-Graficas
+Video: https://www.canva.com/design/DAGR43GOMw0/ZVoX8L1EuB-HD2_ywARR3w/watch?utm_content=DAGR43GOMw0&utm_campaign=designshare&utm_medium=link&utm_source=editor
 
 Raytracer con Animación de Texturas y Ciclo de Día/Noche
 Este proyecto es una implementación de un Raytracer en Rust que incluye características avanzadas como animación de texturas, ciclo de día y noche, materiales personalizados y controles de cámara. El raytracer genera una escena tridimensional interactiva, con una fuente de luz que simula el sol y objetos que representan un muñeco sobre un suelo con textura de bloques.
@@ -45,3 +46,4 @@ W: Acercar la cámara hacia el centro.
 S: Alejar la cámara del centro.
 Flechas izquierda/derecha: Rotar la cámara horizontalmente alrededor del muñeco.
 Flechas arriba/abajo: Rotar la cámara verticalmente
+
