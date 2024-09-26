@@ -61,6 +61,27 @@ fn refract(incident: &Vec3, normal: &Vec3, eta_t: f32) -> Vec3 {
     }
 }
 
+fn block_texture(u: f32, v: f32) -> Color {
+    let block_size = 10.0;  // Aumentamos el tamaño de los bloques para hacerlos más visibles
+    let u_block = ((u * block_size).abs().floor() as i32) % 2;
+    let v_block = ((v * block_size).abs().floor() as i32) % 2;
+
+    // Alternamos los colores de acuerdo a las coordenadas u y v
+    if (u_block + v_block) % 2 == 0 {
+        Color::new(255, 255, 255)  // Color claro
+    } else {
+        Color::new(0, 0, 0)  // Color oscuro
+    }
+}
+
+
+fn realistic_texture(u: f32, v: f32) -> Color {
+    let r = (u * 255.0).abs() as u8;
+    let g = (v * 255.0).abs() as u8;
+    let b = (u * v * 255.0).abs() as u8;
+    Color::new(r, g, b)  // Genera una textura más suave y realista
+}
+
 fn cast_shadow(
     intersect: &Intersect,
     light: &Light,
@@ -90,7 +111,7 @@ pub fn cast_ray(
     light: &Light,
     ambient_light: f32,
     depth: u32,
-    time: f32,  // Agregamos el tiempo como parámetro
+    time: f32,  
 ) -> Color {
     if depth > 3 {
         return skybox(ray_direction);  // Llamamos a la función skybox aquí
@@ -110,10 +131,6 @@ pub fn cast_ray(
     if !intersect.is_intersecting {
         return skybox(ray_direction);  // Si no hay intersección, devuelve el skybox
     }
-
-    // Usar las coordenadas UV para aplicar una textura animada
-    let (u, v) = uv_mapping(&intersect);
-    let texture_color = wave_texture(u, v, time);  // Llamamos a la función de textura de ondas
 
     let light_dir = (light.position - intersect.point).normalize();
     let view_dir = (ray_origin - intersect.point).normalize();
@@ -143,8 +160,18 @@ pub fn cast_ray(
         let refract_origin = offset_origin(&intersect, &refract_dir);
         refract_color = cast_ray(&refract_origin, &refract_dir, objects, light, ambient_light, depth + 1, time);
     }
-    
-    // Combinamos el color de la textura animada con la iluminación calculada
+
+    let (u, v) = uv_mapping(&intersect);
+
+    // Aplicar una textura tipo bloque solo al suelo
+    let texture_color = if intersect.material.name == "suelo" {
+        block_texture(u, v)  // Textura de bloques para el suelo
+    } else if intersect.material.name == "sol" {
+        Color::new(255, 223, 0)  // Color amarillo sin textura para el sol
+    } else {
+        realistic_texture(u, v)  // Textura suave para el muñeco
+    };
+
     let final_color = (texture_color + diffuse + specular) * (1.0 - reflectivity - transparency)
     + (reflect_color * reflectivity)
     + (refract_color * transparency)
@@ -153,32 +180,21 @@ pub fn cast_ray(
     final_color
 }
 
-// Nueva función que genera el skybox
 fn skybox(ray_direction: &Vec3) -> Color {
-    let t = 0.5 * (ray_direction.y + 1.0); // Mapea el y de la dirección del rayo en el intervalo [0, 1]
-    let top_color = Color::new(135, 206, 250); // Azul claro (día)
-    let bottom_color = Color::new(25, 25, 112); // Azul oscuro (noche)
+    let t = 0.5 * (ray_direction.y + 1.0);
+    let top_color = Color::new(135, 206, 250); 
+    let bottom_color = Color::new(25, 25, 112); 
     
-    // Interpolación entre el color superior y el inferior
     top_color * t + bottom_color * (1.0 - t)
 }
 
-// Mapear UVs en la esfera o cubo
 fn uv_mapping(intersect: &Intersect) -> (f32, f32) {
     let u = 0.5 + (intersect.normal.x.atan2(intersect.normal.z)) / (2.0 * PI);
     let v = 0.5 - (intersect.normal.y.asin()) / PI;
     (u, v)
 }
 
-// Nueva función para simular una textura de ondas
-fn wave_texture(u: f32, v: f32, time: f32) -> Color {
-    let wave = ((u * 10.0 + time).sin() + (v * 10.0 + time).cos()) * 0.5 + 0.5;
-    let intensidad = (wave * 255.0).round() as u8;
-    
-    Color::new(intensidad, intensidad, 255)  // Degradado de azul con ondas
-}
-
-pub fn render(framebuffer: &mut Framebuffer, objects: &[Box<dyn RayIntersect>], camera: &Camera, light: &Light, ambient_light: f32, time: f32) {
+fn render(framebuffer: &mut Framebuffer, objects: &[Box<dyn RayIntersect>], camera: &Camera, light: &Light, ambient_light: f32, time: f32) {
     let width = framebuffer.width as f32;
     let height = framebuffer.height as f32;
     let aspect_ratio = width / height;
@@ -224,50 +240,61 @@ fn main() {
         30.0,
         [0.6, 0.3, 0.0, 0.0],
         0.0,
+        "cuerpo"
     );
-
+    
     let head_material = Material::new(
         Color::new(200, 50, 50), // Color rojo para la cabeza
         50.0,
         [0.4, 0.4, 0.2, 0.0],
         0.0,
+        "cabeza"
     );
-
+    
     let leg_material = Material::new(
         Color::new(80, 80, 80), // Color gris para las piernas
         20.0,
         [0.8, 0.2, 0.0, 0.0],
         0.0,
+        "piernas"
     );
-
+    
     let arm_material = Material::new(
         Color::new(80, 100, 80), // Verde oscuro para los brazos
         10.0,
         [0.6, 0.3, 0.0, 0.0],
         0.0,
+        "brazos"
     );
-
+    
     let ground_material = Material::new(
         Color::new(34, 139, 34), // Color verde para el suelo (césped)
         10.0,
         [0.6, 0.2, 0.0, 0.0],
         0.0,
+        "suelo"
     );
+    
+    let sun_material = Material::new(
+        Color::new(255, 223, 0), // Color amarillo para el sol
+        50.0,
+        [1.0, 0.5, 0.0, 0.0],
+        0.0,
+        "sol"
+    );
+    
 
     let objects: Vec<Box<dyn RayIntersect>> = vec![
-        // Cabeza
         Box::new(Sphere {
             center: Vec3::new(0.0, 1.0, 0.0), 
             radius: 0.5,
             material: head_material.clone(),
         }),
-        // Cuerpo
         Box::new(Cube {
             min: Vec3::new(-0.5, -1.0, -0.5),
             max: Vec3::new(0.5, 0.5, 0.5),
             material: body_material.clone(),
         }),
-        // Piernas
         Box::new(Cube {
             min: Vec3::new(-0.3, -2.0, -0.3),
             max: Vec3::new(-0.1, -1.0, 0.1),
@@ -278,7 +305,6 @@ fn main() {
             max: Vec3::new(0.3, -1.0, 0.1),
             material: leg_material.clone(),
         }),
-        // Brazos
         Box::new(Cube {
             min: Vec3::new(-1.0, 0.0, -0.3),
             max: Vec3::new(-0.7, 0.5, 0.3),
@@ -289,66 +315,60 @@ fn main() {
             max: Vec3::new(1.0, 0.5, 0.3),
             material: arm_material.clone(),
         }),
-        // Suelo
         Box::new(Cube {
-            min: Vec3::new(-10.0, -2.1, -10.0),  // Extiende el cubo para simular un terreno extenso
+            min: Vec3::new(-10.0, -2.1, -10.0),
             max: Vec3::new(10.0, -2.0, 10.0),
             material: ground_material.clone(),
+        }),
+        Box::new(Sphere {
+            center: Vec3::new(5.0, 5.0, -5.0), 
+            radius: 1.0,
+            material: sun_material.clone(),
         }),
     ];
 
     let mut camera = Camera::new(
-        Vec3::new(0.0, 0.0, 10.0),  // Posición inicial de la cámara
-        Vec3::new(0.0, 0.0, 0.0),   // Centro de la cámara (a dónde está mirando)
-        Vec3::new(0.0, 1.0, 0.0),   // Vector "up" para mantener la cámara orientada
+        Vec3::new(0.0, 0.0, 10.0), 
+        Vec3::new(0.0, 0.0, 0.0),  
+        Vec3::new(0.0, 1.0, 0.0),  
     );
 
-    // Variables para el ciclo de día y noche
     let mut light = Light::new(Vec3::new(1.0, -1.0, 5.0), Color::new(255, 255, 255), 1.0);
     let start_time = Instant::now();
     let rotation_speed = PI / 10.0;
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        // Actualizar el tiempo transcurrido
         let elapsed_time = start_time.elapsed().as_secs_f32();
         let time_factor = (elapsed_time % DAY_DURATION) / DAY_DURATION;
 
-        // Cambiar la posición de la luz para simular el día
         let light_angle = time_factor * 2.0 * PI;
         light.position.x = light_angle.cos() * 10.0;
         light.position.y = light_angle.sin() * 10.0;
 
-        // Cambiar el color e intensidad de la luz según el ciclo de día
         if time_factor < 0.25 {
-            // Amanecer
-            light.color = Color::new(255, 223, 186);  // Luz más cálida
-            light.intensity = 1.2;  // Luz más intensa
+            light.color = Color::new(255, 223, 186);  
+            light.intensity = 1.2;  
         } else if time_factor < 0.75 {
-            // Día
             light.color = Color::new(255, 255, 224);
-            light.intensity = 1.5;  // Luz máxima
+            light.intensity = 1.5;  
         } else {
-            // Atardecer
             light.color = Color::new(255, 140, 0);
-            light.intensity = 1.0;  // Intensidad media
+            light.intensity = 1.0;  
         }
 
-        // Ajustar la luz ambiental según el ciclo de día
         let ambient_light = if time_factor < 0.5 {
             AMBIENT_LIGHT_DAY
         } else {
             AMBIENT_LIGHT_NIGHT
         };
 
-        // Control de la cámara: acercar/alejar
         if window.is_key_down(Key::W) {
-            camera.eye += camera.direction() * 0.1;  // Acercar
+            camera.eye += camera.direction() * 0.1;  
         }
         if window.is_key_down(Key::S) {
-            camera.eye -= camera.direction() * 0.1;  // Alejar
+            camera.eye -= camera.direction() * 0.1;  
         }
 
-        // Control de la cámara: rotación alrededor del centro
         if window.is_key_down(Key::Left) {
             camera.orbit(rotation_speed, 0.0);
         }
