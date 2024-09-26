@@ -61,6 +61,26 @@ fn refract(incident: &Vec3, normal: &Vec3, eta_t: f32) -> Vec3 {
     }
 }
 
+// Función para calcular el coeficiente de Fresnel
+fn fresnel(incident: &Vec3, normal: &Vec3, refractive_index: f32) -> f32 {
+    let mut cosi = incident.dot(normal).clamp(-1.0, 1.0);
+    let mut etai = 1.0;
+    let mut etat = refractive_index;
+    if cosi > 0.0 {
+        std::mem::swap(&mut etai, &mut etat);
+    }
+    let sint = etai / etat * (1.0 - cosi * cosi).max(0.0).sqrt();
+    if sint >= 1.0 {
+        return 1.0;  // Reflexión total interna
+    } else {
+        let cost = (1.0 - sint * sint).max(0.0).sqrt();
+        cosi = cosi.abs();
+        let rs = ((etat * cosi) - (etai * cost)) / ((etat * cosi) + (etai * cost));
+        let rp = ((etai * cosi) - (etat * cost)) / ((etai * cosi) + (etat * cost));
+        return (rs * rs + rp * rp) / 2.0;
+    }
+}
+
 fn cast_shadow(
     intersect: &Intersect,
     light: &Light,
@@ -92,7 +112,7 @@ pub fn cast_ray(
     depth: u32,
 ) -> Color {
     if depth > 3 {
-        return skybox(ray_direction);  // Llamamos a la función skybox aquí
+        return skybox(ray_direction);
     }
 
     let mut intersect = Intersect::empty();
@@ -107,7 +127,7 @@ pub fn cast_ray(
     }
 
     if !intersect.is_intersecting {
-        return skybox(ray_direction);  // Si no hay intersección, devuelve el skybox
+        return skybox(ray_direction);
     }
 
     let light_dir = (light.position - intersect.point).normalize();
@@ -122,38 +142,37 @@ pub fn cast_ray(
     
     let specular_intensity = view_dir.dot(&reflect_dir).max(0.0).powf(intersect.material.shininess);
     let specular = light.color * intersect.material.albedo[1] * specular_intensity * light_intensity;
-    
+
+    // Calcular Fresnel para reflejos y refracción
+    let fresnel_factor = fresnel(ray_direction, &intersect.normal, intersect.material.refractive_index);
+
     let mut reflect_color = Color::black();
-    let reflectivity = intersect.material.albedo[2] * 0.8;
-    if reflectivity > 0.0 {
+    if intersect.material.albedo[2] > 0.0 {
         let reflect_dir = reflect(&ray_direction, &intersect.normal).normalize();
         let reflect_origin = offset_origin(&intersect, &reflect_dir);
         reflect_color = cast_ray(&reflect_origin, &reflect_dir, objects, light, ambient_light, depth + 1);
     }
     
     let mut refract_color = Color::black();
-    let transparency = intersect.material.albedo[3] * 0.9;
-    if transparency > 0.0 {
+    if intersect.material.albedo[3] > 0.0 {
         let refract_dir = refract(&ray_direction, &intersect.normal, intersect.material.refractive_index);
         let refract_origin = offset_origin(&intersect, &refract_dir);
         refract_color = cast_ray(&refract_origin, &refract_dir, objects, light, ambient_light, depth + 1);
     }
     
-    let final_color = (diffuse + specular) * (1.0 - reflectivity - transparency)
-    + (reflect_color * reflectivity)
-    + (refract_color * transparency)
-    + Color::new(255, 255, 255) * ambient_light;
+    let final_color = (diffuse + specular) * (1.0 - fresnel_factor)
+        + (reflect_color * fresnel_factor)
+        + (refract_color * (1.0 - fresnel_factor))
+        + Color::new(255, 255, 255) * ambient_light;
 
     final_color
 }
 
-// Nueva función que genera el skybox
 fn skybox(ray_direction: &Vec3) -> Color {
     let t = 0.5 * (ray_direction.y + 1.0); // Mapea el y de la dirección del rayo en el intervalo [0, 1]
     let top_color = Color::new(135, 206, 250); // Azul claro (día)
     let bottom_color = Color::new(25, 25, 112); // Azul oscuro (noche)
     
-    // Interpolación entre el color superior y el inferior
     top_color * t + bottom_color * (1.0 - t)
 }
 
@@ -228,57 +247,47 @@ fn main() {
     ];
 
     let mut camera = Camera::new(
-        Vec3::new(0.0, 0.0, 10.0),  // Posición inicial de la cámara
-        Vec3::new(0.0, 0.0, 0.0),   // Centro de la cámara (a dónde está mirando)
-        Vec3::new(0.0, 1.0, 0.0),   // Vector "up" para mantener la cámara orientada
+        Vec3::new(0.0, 0.0, 10.0),
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(0.0, 1.0, 0.0),
     );
 
-    // Variables para el ciclo de día y noche
     let mut light = Light::new(Vec3::new(1.0, -1.0, 5.0), Color::new(255, 255, 255), 1.0);
     let start_time = Instant::now();
     let rotation_speed = PI / 10.0;
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
-        // Actualizar el tiempo transcurrido
         let elapsed_time = start_time.elapsed().as_secs_f32();
         let time_factor = (elapsed_time % DAY_DURATION) / DAY_DURATION;
 
-        // Cambiar la posición de la luz para simular el día
         let light_angle = time_factor * 2.0 * PI;
         light.position.x = light_angle.cos() * 10.0;
         light.position.y = light_angle.sin() * 10.0;
 
-        // Cambiar el color e intensidad de la luz según el ciclo de día
         if time_factor < 0.25 {
-            // Amanecer
-            light.color = Color::new(255, 223, 186);  // Luz más cálida
-            light.intensity = 1.2;  // Luz más intensa
+            light.color = Color::new(255, 223, 186);
+            light.intensity = 1.2;
         } else if time_factor < 0.75 {
-            // Día
             light.color = Color::new(255, 255, 224);
-            light.intensity = 1.5;  // Luz máxima
+            light.intensity = 1.5;
         } else {
-            // Atardecer
             light.color = Color::new(255, 140, 0);
-            light.intensity = 1.0;  // Intensidad media
+            light.intensity = 1.0;
         }
 
-        // Ajustar la luz ambiental según el ciclo de día
         let ambient_light = if time_factor < 0.5 {
             AMBIENT_LIGHT_DAY
         } else {
             AMBIENT_LIGHT_NIGHT
         };
 
-        // Control de la cámara: acercar/alejar
         if window.is_key_down(Key::W) {
-            camera.eye += camera.direction() * 0.1;  // Acercar
+            camera.eye += camera.direction() * 0.1;
         }
         if window.is_key_down(Key::S) {
-            camera.eye -= camera.direction() * 0.1;  // Alejar
+            camera.eye -= camera.direction() * 0.1;
         }
 
-        // Control de la cámara: rotación alrededor del centro
         if window.is_key_down(Key::Left) {
             camera.orbit(rotation_speed, 0.0);
         }
