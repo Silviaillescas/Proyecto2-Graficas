@@ -165,7 +165,6 @@ fn skybox(ray_direction: &Vec3) -> Color {
 
 // Mapear UVs en la esfera o cubo
 fn uv_mapping(intersect: &Intersect) -> (f32, f32) {
-    // Convertir las coordenadas 3D de la intersección en coordenadas UV (2D)
     let u = 0.5 + (intersect.normal.x.atan2(intersect.normal.z)) / (2.0 * PI);
     let v = 0.5 - (intersect.normal.y.asin()) / PI;
     (u, v)
@@ -248,6 +247,13 @@ fn main() {
         0.0,
     );
 
+    let ground_material = Material::new(
+        Color::new(34, 139, 34), // Color verde para el suelo (césped)
+        10.0,
+        [0.6, 0.2, 0.0, 0.0],
+        0.0,
+    );
+
     let objects: Vec<Box<dyn RayIntersect>> = vec![
         // Cabeza
         Box::new(Sphere {
@@ -282,6 +288,12 @@ fn main() {
             min: Vec3::new(0.7, 0.0, -0.3),
             max: Vec3::new(1.0, 0.5, 0.3),
             material: arm_material.clone(),
+        }),
+        // Suelo
+        Box::new(Cube {
+            min: Vec3::new(-10.0, -2.1, -10.0),  // Extiende el cubo para simular un terreno extenso
+            max: Vec3::new(10.0, -2.0, 10.0),
+            material: ground_material.clone(),
         }),
     ];
 
