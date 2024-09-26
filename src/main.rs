@@ -61,26 +61,6 @@ fn refract(incident: &Vec3, normal: &Vec3, eta_t: f32) -> Vec3 {
     }
 }
 
-// Función para calcular el coeficiente de Fresnel
-fn fresnel(incident: &Vec3, normal: &Vec3, refractive_index: f32) -> f32 {
-    let mut cosi = incident.dot(normal).clamp(-1.0, 1.0);
-    let mut etai = 1.0;
-    let mut etat = refractive_index;
-    if cosi > 0.0 {
-        std::mem::swap(&mut etai, &mut etat);
-    }
-    let sint = etai / etat * (1.0 - cosi * cosi).max(0.0).sqrt();
-    if sint >= 1.0 {
-        return 1.0;  // Reflexión total interna
-    } else {
-        let cost = (1.0 - sint * sint).max(0.0).sqrt();
-        cosi = cosi.abs();
-        let rs = ((etat * cosi) - (etai * cost)) / ((etat * cosi) + (etai * cost));
-        let rp = ((etai * cosi) - (etat * cost)) / ((etai * cosi) + (etat * cost));
-        return (rs * rs + rp * rp) / 2.0;
-    }
-}
-
 fn cast_shadow(
     intersect: &Intersect,
     light: &Light,
@@ -110,9 +90,10 @@ pub fn cast_ray(
     light: &Light,
     ambient_light: f32,
     depth: u32,
+    time: f32,  // Agregamos el tiempo como parámetro
 ) -> Color {
     if depth > 3 {
-        return skybox(ray_direction);
+        return skybox(ray_direction);  // Llamamos a la función skybox aquí
     }
 
     let mut intersect = Intersect::empty();
@@ -127,8 +108,12 @@ pub fn cast_ray(
     }
 
     if !intersect.is_intersecting {
-        return skybox(ray_direction);
+        return skybox(ray_direction);  // Si no hay intersección, devuelve el skybox
     }
+
+    // Usar las coordenadas UV para aplicar una textura animada
+    let (u, v) = uv_mapping(&intersect);
+    let texture_color = wave_texture(u, v, time);  // Llamamos a la función de textura de ondas
 
     let light_dir = (light.position - intersect.point).normalize();
     let view_dir = (ray_origin - intersect.point).normalize();
@@ -142,41 +127,59 @@ pub fn cast_ray(
     
     let specular_intensity = view_dir.dot(&reflect_dir).max(0.0).powf(intersect.material.shininess);
     let specular = light.color * intersect.material.albedo[1] * specular_intensity * light_intensity;
-
-    // Calcular Fresnel para reflejos y refracción
-    let fresnel_factor = fresnel(ray_direction, &intersect.normal, intersect.material.refractive_index);
-
+    
     let mut reflect_color = Color::black();
-    if intersect.material.albedo[2] > 0.0 {
+    let reflectivity = intersect.material.albedo[2] * 0.8;
+    if reflectivity > 0.0 {
         let reflect_dir = reflect(&ray_direction, &intersect.normal).normalize();
         let reflect_origin = offset_origin(&intersect, &reflect_dir);
-        reflect_color = cast_ray(&reflect_origin, &reflect_dir, objects, light, ambient_light, depth + 1);
+        reflect_color = cast_ray(&reflect_origin, &reflect_dir, objects, light, ambient_light, depth + 1, time);
     }
     
     let mut refract_color = Color::black();
-    if intersect.material.albedo[3] > 0.0 {
+    let transparency = intersect.material.albedo[3] * 0.9;
+    if transparency > 0.0 {
         let refract_dir = refract(&ray_direction, &intersect.normal, intersect.material.refractive_index);
         let refract_origin = offset_origin(&intersect, &refract_dir);
-        refract_color = cast_ray(&refract_origin, &refract_dir, objects, light, ambient_light, depth + 1);
+        refract_color = cast_ray(&refract_origin, &refract_dir, objects, light, ambient_light, depth + 1, time);
     }
     
-    let final_color = (diffuse + specular) * (1.0 - fresnel_factor)
-        + (reflect_color * fresnel_factor)
-        + (refract_color * (1.0 - fresnel_factor))
-        + Color::new(255, 255, 255) * ambient_light;
+    // Combinamos el color de la textura animada con la iluminación calculada
+    let final_color = (texture_color + diffuse + specular) * (1.0 - reflectivity - transparency)
+    + (reflect_color * reflectivity)
+    + (refract_color * transparency)
+    + Color::new(255, 255, 255) * ambient_light;
 
     final_color
 }
 
+// Nueva función que genera el skybox
 fn skybox(ray_direction: &Vec3) -> Color {
     let t = 0.5 * (ray_direction.y + 1.0); // Mapea el y de la dirección del rayo en el intervalo [0, 1]
     let top_color = Color::new(135, 206, 250); // Azul claro (día)
     let bottom_color = Color::new(25, 25, 112); // Azul oscuro (noche)
     
+    // Interpolación entre el color superior y el inferior
     top_color * t + bottom_color * (1.0 - t)
 }
 
-pub fn render(framebuffer: &mut Framebuffer, objects: &[Box<dyn RayIntersect>], camera: &Camera, light: &Light, ambient_light: f32) {
+// Mapear UVs en la esfera o cubo
+fn uv_mapping(intersect: &Intersect) -> (f32, f32) {
+    // Convertir las coordenadas 3D de la intersección en coordenadas UV (2D)
+    let u = 0.5 + (intersect.normal.x.atan2(intersect.normal.z)) / (2.0 * PI);
+    let v = 0.5 - (intersect.normal.y.asin()) / PI;
+    (u, v)
+}
+
+// Nueva función para simular una textura de ondas
+fn wave_texture(u: f32, v: f32, time: f32) -> Color {
+    let wave = ((u * 10.0 + time).sin() + (v * 10.0 + time).cos()) * 0.5 + 0.5;
+    let intensity = (wave * 255.0).round() as u8;
+    
+    Color::new(intensity, intensity, 255)  // Degradado de azul con ondas
+}
+
+pub fn render(framebuffer: &mut Framebuffer, objects: &[Box<dyn RayIntersect>], camera: &Camera, light: &Light, ambient_light: f32, time: f32) {
     let width = framebuffer.width as f32;
     let height = framebuffer.height as f32;
     let aspect_ratio = width / height;
@@ -194,7 +197,7 @@ pub fn render(framebuffer: &mut Framebuffer, objects: &[Box<dyn RayIntersect>], 
             let ray_direction = normalize(&Vec3::new(screen_x, screen_y, -1.0));
             let rotated_direction = camera.base_change(&ray_direction);
 
-            let pixel_color = cast_ray(&camera.eye, &rotated_direction, objects, light, ambient_light, 0);
+            let pixel_color = cast_ray(&camera.eye, &rotated_direction, objects, light, ambient_light, 0, time);
             framebuffer.set_current_color(pixel_color.to_hex());
             framebuffer.point(x, y);
         }
@@ -211,7 +214,7 @@ fn main() {
     let mut framebuffer = Framebuffer::new(framebuffer_width, framebuffer_height);
 
     let mut window = Window::new(
-        "Refractor",
+        "Raytracer with Animated Textures",
         window_width,
         window_height,
         WindowOptions::default(),
@@ -247,47 +250,57 @@ fn main() {
     ];
 
     let mut camera = Camera::new(
-        Vec3::new(0.0, 0.0, 10.0),
-        Vec3::new(0.0, 0.0, 0.0),
-        Vec3::new(0.0, 1.0, 0.0),
+        Vec3::new(0.0, 0.0, 10.0),  // Posición inicial de la cámara
+        Vec3::new(0.0, 0.0, 0.0),   // Centro de la cámara (a dónde está mirando)
+        Vec3::new(0.0, 1.0, 0.0),   // Vector "up" para mantener la cámara orientada
     );
 
+    // Variables para el ciclo de día y noche
     let mut light = Light::new(Vec3::new(1.0, -1.0, 5.0), Color::new(255, 255, 255), 1.0);
     let start_time = Instant::now();
     let rotation_speed = PI / 10.0;
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
+        // Actualizar el tiempo transcurrido
         let elapsed_time = start_time.elapsed().as_secs_f32();
         let time_factor = (elapsed_time % DAY_DURATION) / DAY_DURATION;
 
+        // Cambiar la posición de la luz para simular el día
         let light_angle = time_factor * 2.0 * PI;
         light.position.x = light_angle.cos() * 10.0;
         light.position.y = light_angle.sin() * 10.0;
 
+        // Cambiar el color e intensidad de la luz según el ciclo de día
         if time_factor < 0.25 {
-            light.color = Color::new(255, 223, 186);
-            light.intensity = 1.2;
+            // Amanecer
+            light.color = Color::new(255, 223, 186);  // Luz más cálida
+            light.intensity = 1.2;  // Luz más intensa
         } else if time_factor < 0.75 {
+            // Día
             light.color = Color::new(255, 255, 224);
-            light.intensity = 1.5;
+            light.intensity = 1.5;  // Luz máxima
         } else {
+            // Atardecer
             light.color = Color::new(255, 140, 0);
-            light.intensity = 1.0;
+            light.intensity = 1.0;  // Intensidad media
         }
 
+        // Ajustar la luz ambiental según el ciclo de día
         let ambient_light = if time_factor < 0.5 {
             AMBIENT_LIGHT_DAY
         } else {
             AMBIENT_LIGHT_NIGHT
         };
 
+        // Control de la cámara: acercar/alejar
         if window.is_key_down(Key::W) {
-            camera.eye += camera.direction() * 0.1;
+            camera.eye += camera.direction() * 0.1;  // Acercar
         }
         if window.is_key_down(Key::S) {
-            camera.eye -= camera.direction() * 0.1;
+            camera.eye -= camera.direction() * 0.1;  // Alejar
         }
 
+        // Control de la cámara: rotación alrededor del centro
         if window.is_key_down(Key::Left) {
             camera.orbit(rotation_speed, 0.0);
         }
@@ -304,7 +317,7 @@ fn main() {
             camera.orbit(0.0, rotation_speed);
         }
 
-        render(&mut framebuffer, &objects, &camera, &light, ambient_light);
+        render(&mut framebuffer, &objects, &camera, &light, ambient_light, elapsed_time);
 
         window
             .update_with_buffer(&framebuffer.buffer, framebuffer_width, framebuffer_height)
